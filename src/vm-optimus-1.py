@@ -1,43 +1,64 @@
 #!/usr/bin/env python3
 from flask import Flask, request, jsonify
-import pyautogui
-import subprocess
-import threading
-import time
-import tkinter as tk
+import pyautogui, subprocess, threading, time
+from PyQt5 import QtWidgets, QtCore, QtGui
+import sys
 
 app = Flask(__name__)
-highlight_running = False
+highlight_app = None
+highlight_timer = None
+highlight_window = None
+
+# at the top of your file
+highlight_app = None
+highlight_window = None
+highlight_timer = None
 
 def start_cursor_highlight():
-    """Show a red circle that follows the mouse until stopped."""
-    def _run():
-        global highlight_running
-        highlight_running = True
+    """Launch a click-through translucent overlay that follows the mouse."""
+    def _run_qt():
+        global highlight_app, highlight_window, highlight_timer
 
-        root = tk.Tk()
-        root.overrideredirect(True)               # No window border
-        root.attributes('-topmost', True)         # Always on top
+        # If already running, do nothing
+        if highlight_app:
+            return
 
-        # Try per-pixel transparency; if unsupported, fall back to alpha
-        try:
-            root.attributes('-transparentcolor', 'white')
-        except tk.TclError:
-            root.attributes('-alpha', 0.3)
+        from PyQt5 import QtWidgets, QtCore, QtGui
+        import sys
 
-        canvas = tk.Canvas(root, width=50, height=50, bg='white', highlightthickness=0)
-        canvas.pack()
-        canvas.create_oval(5, 5, 45, 45, outline='red', width=4)
+        highlight_app = QtWidgets.QApplication(sys.argv)
+        highlight_window = QtWidgets.QWidget(
+            None,
+            QtCore.Qt.FramelessWindowHint |
+            QtCore.Qt.WindowStaysOnTopHint |
+            QtCore.Qt.Tool
+        )
+        highlight_window.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+        highlight_window.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        highlight_window.resize(50, 50)
 
-        while highlight_running:
-            x, y = pyautogui.position()
-            root.geometry(f"+{x-25}+{y-25}")
-            root.update()
-            time.sleep(0.01)
+        # Paint a red circle
+        def paint_overlay(event):
+            painter = QtGui.QPainter(highlight_window)
+            pen = QtGui.QPen(QtCore.Qt.red, 4)
+            painter.setPen(pen)
+            painter.drawEllipse(2, 2, 46, 46)
+        highlight_window.paintEvent = paint_overlay
 
-        root.destroy()
+        highlight_window.show()
 
-    threading.Thread(target=_run, daemon=True).start()
+        # Timer to follow the cursor
+        def tick():
+            pos = QtGui.QCursor.pos()
+            highlight_window.move(pos.x() - 25, pos.y() - 25)
+
+        highlight_timer = QtCore.QTimer()
+        highlight_timer.timeout.connect(tick)
+        highlight_timer.start(10)
+
+        highlight_app.exec_()
+
+    threading.Thread(target=_run_qt, daemon=True).start()
 
 @app.route('/api/v1/start_highlight', methods=['POST'])
 def start_highlight_endpoint():
@@ -46,8 +67,10 @@ def start_highlight_endpoint():
 
 @app.route('/api/v1/stop_highlight', methods=['POST'])
 def stop_highlight_endpoint():
-    global highlight_running
-    highlight_running = False
+    global highlight_app
+    if highlight_app:
+        highlight_app.quit()
+    highlight_app = None
     return jsonify(status='highlighting stopped')
 
 @app.route('/api/v1/open_url', methods=['POST'])
