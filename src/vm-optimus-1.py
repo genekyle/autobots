@@ -7,8 +7,6 @@ import time
 import tkinter as tk
 
 app = Flask(__name__)
-
-# Global flag for the highlight thread
 highlight_running = False
 
 def start_cursor_highlight():
@@ -18,18 +16,21 @@ def start_cursor_highlight():
         highlight_running = True
 
         root = tk.Tk()
-        root.overrideredirect(True)               # No window decorations
-        root.attributes('-topmost', True)         # Stay on top
-        # Make the window background fully transparent (may require X composition)
-        root.attributes('-transparentcolor', 'white')
+        root.overrideredirect(True)               # No window border
+        root.attributes('-topmost', True)         # Always on top
+
+        # Try per-pixel transparency; if unsupported, fall back to alpha
+        try:
+            root.attributes('-transparentcolor', 'white')
+        except tk.TclError:
+            root.attributes('-alpha', 0.3)
+
         canvas = tk.Canvas(root, width=50, height=50, bg='white', highlightthickness=0)
         canvas.pack()
-        # Draw a red circle
         canvas.create_oval(5, 5, 45, 45, outline='red', width=4)
 
         while highlight_running:
             x, y = pyautogui.position()
-            # Center the circle on the pointer
             root.geometry(f"+{x-25}+{y-25}")
             root.update()
             time.sleep(0.01)
@@ -49,21 +50,16 @@ def stop_highlight_endpoint():
     highlight_running = False
     return jsonify(status='highlighting stopped')
 
-
-# 1) Open a URL in a new Chromium window with stealth flags
 @app.route('/api/v1/open_url', methods=['POST'])
 def open_url():
     url = request.json.get('url')
-    ua = (
-        "Mozilla/5.0 (X11; Linux x86_64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    )
+    ua = ("Mozilla/5.0 (X11; Linux x86_64) "
+          "AppleWebKit/537.36 (KHTML, like Gecko) "
+          "Chrome/120.0.0.0 Safari/537.36")
     cmd = [
         "chromium-browser",
         "--new-window",
         f"--user-agent={ua}",
-        "--disable-blink-features=AutomationControlled",
         "--disable-infobars",
         "--disable-gpu",
         "--no-first-run",
@@ -72,7 +68,6 @@ def open_url():
     threading.Thread(target=lambda: subprocess.Popen(cmd), daemon=True).start()
     return jsonify(status='ok')
 
-# 2) Draw a Bézier-style “star” on the screen
 @app.route('/api/v1/draw_curve', methods=['POST'])
 def draw_curve():
     def _draw():
@@ -81,7 +76,6 @@ def draw_curve():
             pyautogui.moveTo(x0, y0, duration=0.2)
             pyautogui.dragTo(x1, y1, duration=0.5)
         time.sleep(0.5)
-
     threading.Thread(target=_draw, daemon=True).start()
     return jsonify(status='ok')
 
